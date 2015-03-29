@@ -34,94 +34,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/ASTMatchers/ASTMatchers.h"
-#include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/AST/RecursiveASTVisitor.h"
-#include "clang/Basic/SourceManager.h"
-#include "clang/Frontend/FrontendActions.h"
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/CompilerInvocation.h"
-#include "clang/Lex/Lexer.h"
 #include "clang/Tooling/CommonOptionsParser.h"
-#include "clang/Tooling/Refactoring.h"
-#include "clang/Tooling/Tooling.h"
-#include "clang/Serialization/ASTWriter.h"
-#include "clang/Serialization/ASTReader.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Signals.h"
 
+#include "OdrCheckAction.h"
+#include "OdrCheckTool.h"
+#include "DeclContextComparer.h"
+
 using namespace clang;
-using namespace clang::ast_matchers;
+using namespace clang::odr_check;
 using namespace clang::tooling;
 using namespace llvm;
 
-namespace odr_check {
-
-typedef std::vector<std::unique_ptr<ASTUnit>> ASTList;
-
-class OdrCheckingStrategy {
-public:
-  virtual bool Check(ASTList& ASTs) = 0;
-};
-
-class OdrCheckAction : public ToolAction {
-public:
-
-
-private:
-  ASTList ASTs;
-
-public:
-  OdrCheckAction(){}
-
-  bool runInvocation(CompilerInvocation *Invocation, FileManager *Files,
-                     DiagnosticConsumer *DiagConsumer) override {
-
-    std::unique_ptr<ASTUnit> AST = ASTUnit::LoadFromCompilerInvocation(
-        Invocation, CompilerInstance::createDiagnostics(
-                        &Invocation->getDiagnosticOpts(), DiagConsumer,
-                        /*ShouldOwnClient=*/false));
-    if (!AST)
-      return false;
-
-    ASTs.push_back(std::move(AST));
-    return true;
-  }
-
-  ASTList& getASTList() {
-    return ASTs;
-  }
-
-  virtual std::unique_ptr<OdrCheckingStrategy> createOdrCheckingStrategy() = 0;
-};
-
-
-class OdrCheckTool : private ClangTool {
-public:
-  OdrCheckTool(const CompilationDatabase &Compilations,
-               ArrayRef<std::string> SourcePaths)
-    : ClangTool(Compilations, SourcePaths) {
-  }
-
-  int runOdrCheck(OdrCheckAction *action) {
-    int Res = run(action);
-    if (Res != EXIT_SUCCESS) {
-      return Res;
-    }
-    auto CheckingStrategy = action->createOdrCheckingStrategy();
-    return CheckOdr(CheckingStrategy.get(), action->getASTList());
-  }
-
-private:
-  int CheckOdr(OdrCheckingStrategy* CheckingStrategy, ASTList& ASTs) {
-    if (!CheckingStrategy->Check(ASTs)) {
-      return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
-  }
-};
+namespace {
 
 class SimpleComparisonCheckingStrategy : public OdrCheckingStrategy {
 public:
@@ -191,26 +117,9 @@ private:
   }
 
   bool IsSameDeclContexts(DeclContext* ddc, DeclContext* rdc) {
-    while (ddc && rdc) {
-      if (ddc->isTranslationUnit() && rdc->isTranslationUnit()) {
-        Out << "both decl contexts are TU\n";
-        return true;
-      }
-      else if (ddc->isTranslationUnit() || rdc->isTranslationUnit()) {
-        Out << "ddc is TU[" << ddc->isTranslationUnit() << "], "
-               "rdc is TU[" << rdc->isTranslationUnit() << "]\n";
-        return false;
-      }
+    DeclContextComparer cmp(Out);
 
-      if (!IsSameDeclContextsImp(ddc, rdc)) {
-        return false;
-      }
-
-      ddc = ddc->getParent();
-      rdc = rdc->getParent();
-    }
-
-    return false;
+    return cmp.isSame(ddc, rdc);
   }
 
   bool CheckDecls(TagDecl* D) {
@@ -219,34 +128,6 @@ private:
 
     Out << "R: \n";
     Root->dump(Out);
-
-
-
-    return true;
-  }
-
-  bool IsSameDeclContextsImp(DeclContext* ddc, DeclContext* rdc) {
-    if (ddc->getDeclKind() != rdc->getDeclKind()) {
-      Out << "expected decl kind ["<< rdc->getDeclKindName() << "], "
-             "got [" << ddc->getDeclKindName() << "\n";
-
-      return false;
-    }
-    Out << "decl kind ["<< rdc->getDeclKindName() << "]\n";
-
-    if (isa<NamespaceDecl>(ddc)) {
-      NamespaceDecl* dnd = cast<NamespaceDecl>(ddc);
-      NamespaceDecl* rnd = cast<NamespaceDecl>(rdc);
-
-      if (dnd->getName() != rnd->getName()) {
-        Out << "expected namespace [" << rnd->getName() << "], "
-               "but got namespace [" << dnd->getName() << "]\n";
-
-        return false;
-      }
-
-      Out << "namespace [" << rnd->getName() << "]\n";
-    }
 
     return true;
   }
@@ -341,9 +222,8 @@ public:
 
 };
 
-} // odr_check namespace
+} // end namespace
 
-using namespace odr_check;
 
 // Set up the command line options
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
