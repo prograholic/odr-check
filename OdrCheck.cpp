@@ -145,23 +145,111 @@ private:
 };
 
 
-class FindCxxRecordDecl : public RecursiveASTVisitor<FindCxxRecordDecl>
+class FindTagDecl : public RecursiveASTVisitor<FindTagDecl>
 {
 public:
-  FindCxxRecordDecl(CXXRecordDecl* root, raw_ostream& out) : Root(root), Out(out) {
+  FindTagDecl(TagDecl* root, raw_ostream& out) : Root(root), Out(out) {
   }
 
-  bool VisitCXXRecordDecl(CXXRecordDecl* D) {
-    if (D->getName() == Root->getName()) {
-      Out << "found decl with name [" << D->getName() << "]\n";
-      Out.flush();
+  bool VisitTagDecl(TagDecl* D) {
+    if (!IsSameDecls(D)) {
+      return true;
+    }
+
+    return CheckDecls(D);
+  }
+private:
+  TagDecl* Root;
+  raw_ostream& Out;
+
+  bool IsSameDecls(TagDecl* D) {
+    if (D->getName() != Root->getName()) {
+      Out << "skipping decl with name [" << D->getName() << "], "
+             "expected [" << Root->getName()<< "]\n";
+      return false;
+    }
+    Out << "name [" << D->getName() << "]\n";
+
+    if (D->getTagKind() != Root->getTagKind()) {
+      Out << "skipping decl with tag [" << D->getTagKind() << "], "
+             "expected [" << Root->getTagKind()<< "]\n";
+      return false;
+    }
+    Out << "tag [" << D->getTagKind() << "]\n";
+
+    DeclContext* ddc = D->getDeclContext();
+    DeclContext* rdc = Root->getDeclContext();
+
+    if (!IsSameDeclContexts(ddc, rdc)) {
+      Out << "decl contexts are different\n";
+      return false;
+    }
+
+    Out << "decls are same\n";
+
+    return true;
+  }
+
+  bool IsSameDeclContexts(DeclContext* ddc, DeclContext* rdc) {
+    while (ddc && rdc) {
+      if (ddc->isTranslationUnit() && rdc->isTranslationUnit()) {
+        Out << "both decl contexts are TU\n";
+        return true;
+      }
+      else if (ddc->isTranslationUnit() || rdc->isTranslationUnit()) {
+        Out << "ddc is TU[" << ddc->isTranslationUnit() << "], "
+               "rdc is TU[" << rdc->isTranslationUnit() << "]\n";
+        return false;
+      }
+
+      if (!IsSameDeclContextsImp(ddc, rdc)) {
+        return false;
+      }
+
+      ddc = ddc->getParent();
+      rdc = rdc->getParent();
+    }
+
+    return false;
+  }
+
+  bool CheckDecls(TagDecl* D) {
+    Out << "D: \n";
+    D->dump(Out);
+
+    Out << "R: \n";
+    Root->dump(Out);
+
+
+
+    return true;
+  }
+
+  bool IsSameDeclContextsImp(DeclContext* ddc, DeclContext* rdc) {
+    if (ddc->getDeclKind() != rdc->getDeclKind()) {
+      Out << "expected decl kind ["<< rdc->getDeclKindName() << "], "
+             "got [" << ddc->getDeclKindName() << "\n";
+
+      return false;
+    }
+    Out << "decl kind ["<< rdc->getDeclKindName() << "]\n";
+
+    if (isa<NamespaceDecl>(ddc)) {
+      NamespaceDecl* dnd = cast<NamespaceDecl>(ddc);
+      NamespaceDecl* rnd = cast<NamespaceDecl>(rdc);
+
+      if (dnd->getName() != rnd->getName()) {
+        Out << "expected namespace [" << rnd->getName() << "], "
+               "but got namespace [" << dnd->getName() << "]\n";
+
+        return false;
+      }
+
+      Out << "namespace [" << rnd->getName() << "]\n";
     }
 
     return true;
   }
-private:
-  CXXRecordDecl* Root;
-  raw_ostream& Out;
 };
 
 
@@ -174,28 +262,22 @@ public:
 #if 0
   bool VisitDecl(Decl *D) {
     Out << "decl begin {\n";
-    Out.flush();
     D->dump(Out);
-    Out.flush();
     Out << "} cxx record end\n";
-    Out.flush();
 
     return true;
   }
 #endif //0
 
-  bool VisitCXXRecordDecl(CXXRecordDecl* D) {
+  bool VisitTagDecl(TagDecl* D) {
 
-    FindCxxRecordDecl other(D, Out);
+    FindTagDecl other(D, Out);
 
     return other.TraverseDecl(Other);
 #if 0
     Out << "cxx record begin {\n";
-    Out.flush();
     D->dump(Out);
-    Out.flush();
     Out << "} cxx record end\n";
-    Out.flush();
     return true;
 #endif //0
   }
@@ -230,20 +312,18 @@ private:
     TranslationUnitDecl* rootTuDecl = rootCtx.getTranslationUnitDecl();
     TranslationUnitDecl* otherTuDecl = otherCtx.getTranslationUnitDecl();
 
-    raw_ostream& out = outs();
+    raw_ostream& out = errs();
 
+#if 0
     out << "root\n";
-    out.flush();
     rootTuDecl->dump(out);
-    out.flush();
 
     out << "\nother\n";
-    out.flush();
     otherTuDecl->dump();
-    out.flush();
 
     out << "\nvisitor\n";
-    out.flush();
+#endif //0
+
     RootVisitor V(otherTuDecl, out);
     V.TraverseDecl(rootTuDecl);
 
