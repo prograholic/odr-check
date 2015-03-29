@@ -36,66 +36,234 @@
 
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/FrontendActions.h"
+#include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Refactoring.h"
 #include "clang/Tooling/Tooling.h"
+#include "clang/Serialization/ASTWriter.h"
+#include "clang/Serialization/ASTReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Signals.h"
-
-#include <iostream>
 
 using namespace clang;
 using namespace clang::ast_matchers;
 using namespace clang::tooling;
 using namespace llvm;
 
-namespace {
-class ToolTemplateCallback : public MatchFinder::MatchCallback {
- public:
-  ToolTemplateCallback(Replacements *Replace) : Replace(Replace) {}
+namespace odr_check {
 
-  void run(const MatchFinder::MatchResult &Result) override {
-    // TODO: This routine will get called for each thing that the matchers find.
-    // At this point, you can examine the match, and do whatever you want,
-    // including replacing the matched text with other text
-    (void)Replace; // This to prevent an "unused member variable" warning;
+typedef std::vector<std::unique_ptr<ASTUnit>> ASTList;
 
-    auto tuDecl = Result.Context->getTranslationUnitDecl();
-
-    tuDecl->dump();
-  }
-
- private:
-  Replacements *Replace;
+class OdrCheckingStrategy {
+public:
+  virtual bool Check(ASTList& ASTs) = 0;
 };
 
-class OdrASTConsumer : public clang::ASTConsumer {
- public:
+class OdrCheckAction : public ToolAction {
+public:
 
-  bool HandleTopLevelDecl(DeclGroupRef D) override {
-    llvm::outs() << __FUNCTION__ << "\n";
 
-    for (auto decl : D) {
-      decl->dump();
-    }
+private:
+  ASTList ASTs;
+
+public:
+  OdrCheckAction(){}
+
+  bool runInvocation(CompilerInvocation *Invocation, FileManager *Files,
+                     DiagnosticConsumer *DiagConsumer) override {
+
+    std::unique_ptr<ASTUnit> AST = ASTUnit::LoadFromCompilerInvocation(
+        Invocation, CompilerInstance::createDiagnostics(
+                        &Invocation->getDiagnosticOpts(), DiagConsumer,
+                        /*ShouldOwnClient=*/false));
+    if (!AST)
+      return false;
+
+    ASTs.push_back(std::move(AST));
     return true;
   }
 
+  ASTList& getASTList() {
+    return ASTs;
+  }
+
+  virtual std::unique_ptr<OdrCheckingStrategy> createOdrCheckingStrategy() = 0;
 };
 
-class ClangOdrCheckerFactory : public clang::ASTFrontendAction {
+
+class OdrCheckTool : private ClangTool {
 public:
-  std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                        StringRef InFile) override {
-    return llvm::make_unique<OdrASTConsumer>();
+  OdrCheckTool(const CompilationDatabase &Compilations,
+               ArrayRef<std::string> SourcePaths)
+    : ClangTool(Compilations, SourcePaths) {
+  }
+
+  int runOdrCheck(OdrCheckAction *action) {
+    int Res = run(action);
+    if (Res != EXIT_SUCCESS) {
+      return Res;
+    }
+    auto CheckingStrategy = action->createOdrCheckingStrategy();
+    return CheckOdr(CheckingStrategy.get(), action->getASTList());
+  }
+
+private:
+  int CheckOdr(OdrCheckingStrategy* CheckingStrategy, ASTList& ASTs) {
+    if (!CheckingStrategy->Check(ASTs)) {
+      return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
   }
 };
 
-} // end anonymous namespace
+class SimpleComparisonCheckingStrategy : public OdrCheckingStrategy {
+public:
+  virtual bool Check(ASTList &ASTs) override {
+    for (auto& leftAstIt : ASTs) {
+      for (auto& rightAstIt : ASTs) {
+        if (leftAstIt != rightAstIt) {
+          if (!CheckOdrForAsts(*leftAstIt, *rightAstIt)) {
+            return EXIT_FAILURE;
+          }
+        }
+      }
+    }
+    return EXIT_SUCCESS;
+  }
+
+private:
+  bool CheckOdrForAsts(ASTUnit& left, ASTUnit& right) const {
+    return false;
+  }
+};
+
+
+class FindCxxRecordDecl : public RecursiveASTVisitor<FindCxxRecordDecl>
+{
+public:
+  FindCxxRecordDecl(CXXRecordDecl* root, raw_ostream& out) : Root(root), Out(out) {
+  }
+
+  bool VisitCXXRecordDecl(CXXRecordDecl* D) {
+    if (D->getName() == Root->getName()) {
+      Out << "found decl with name [" << D->getName() << "]\n";
+      Out.flush();
+    }
+
+    return true;
+  }
+private:
+  CXXRecordDecl* Root;
+  raw_ostream& Out;
+};
+
+
+class RootVisitor : public RecursiveASTVisitor<RootVisitor>
+{
+public:
+
+  RootVisitor(TranslationUnitDecl* other, raw_ostream& out): Other(other), Out(out) {
+  }
+#if 0
+  bool VisitDecl(Decl *D) {
+    Out << "decl begin {\n";
+    Out.flush();
+    D->dump(Out);
+    Out.flush();
+    Out << "} cxx record end\n";
+    Out.flush();
+
+    return true;
+  }
+#endif //0
+
+  bool VisitCXXRecordDecl(CXXRecordDecl* D) {
+
+    FindCxxRecordDecl other(D, Out);
+
+    return other.TraverseDecl(Other);
+#if 0
+    Out << "cxx record begin {\n";
+    Out.flush();
+    D->dump(Out);
+    Out.flush();
+    Out << "} cxx record end\n";
+    Out.flush();
+    return true;
+#endif //0
+  }
+
+private:
+  TranslationUnitDecl* Other;
+  raw_ostream& Out;
+};
+
+
+class ASTMergingCheckingStrategy : public OdrCheckingStrategy {
+public:
+  virtual bool Check(ASTList &ASTs) override {
+    if (ASTs.empty()) {
+      return true;
+    }
+
+    auto& rootAST = ASTs.front();
+    for (auto astIt = ASTs.begin() + 1; astIt != ASTs.end(); ++astIt) {
+      if (!MergeAsts(rootAST.get(), astIt->get())) {
+        return false;
+      }
+    }
+    return EXIT_SUCCESS;
+  }
+
+private:
+  bool MergeAsts(ASTUnit* root, ASTUnit* other) const {
+    ASTContext& rootCtx = root->getASTContext();
+    ASTContext& otherCtx = other->getASTContext();
+
+    TranslationUnitDecl* rootTuDecl = rootCtx.getTranslationUnitDecl();
+    TranslationUnitDecl* otherTuDecl = otherCtx.getTranslationUnitDecl();
+
+    raw_ostream& out = outs();
+
+    out << "root\n";
+    out.flush();
+    rootTuDecl->dump(out);
+    out.flush();
+
+    out << "\nother\n";
+    out.flush();
+    otherTuDecl->dump();
+    out.flush();
+
+    out << "\nvisitor\n";
+    out.flush();
+    RootVisitor V(otherTuDecl, out);
+    V.TraverseDecl(rootTuDecl);
+
+
+    return false;
+  }
+};
+
+
+class MergeAstsAction : public OdrCheckAction {
+public:
+  std::unique_ptr<OdrCheckingStrategy> createOdrCheckingStrategy() override {
+    return std::unique_ptr<OdrCheckingStrategy>(new ASTMergingCheckingStrategy);
+  }
+
+};
+
+} // odr_check namespace
+
+using namespace odr_check;
 
 // Set up the command line options
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
@@ -104,10 +272,9 @@ static cl::OptionCategory ToolTemplateCategory("odr-check options");
 int main(int argc, const char **argv) {
   llvm::sys::PrintStackTraceOnErrorSignal();
   CommonOptionsParser OptionsParser(argc, argv, ToolTemplateCategory);
-  ClangTool Tool(OptionsParser.getCompilations(),
-                 OptionsParser.getSourcePathList());
+  OdrCheckTool Tool(OptionsParser.getCompilations(),
+                    OptionsParser.getSourcePathList());
 
-  auto FrontendFactory = newFrontendActionFactory<ClangOdrCheckerFactory>();
-
-  return Tool.run(FrontendFactory.get());
+  MergeAstsAction Action;
+  return Tool.runOdrCheck(&Action);
 }
