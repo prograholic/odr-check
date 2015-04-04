@@ -41,6 +41,7 @@
 #include "OdrCheckAction.h"
 #include "OdrCheckTool.h"
 #include "DeclContextComparer.h"
+#include "OdrViolationsScanner.h"
 
 using namespace clang;
 using namespace clang::odr_check;
@@ -77,12 +78,20 @@ public:
   FindTagDecl(TagDecl* root, raw_ostream& out) : Root(root), Out(out) {
   }
 
+  /**
+   * @brief VisitTagDecl - visit TagDecl declaration and check it with Root
+   *
+   * This function tries to compare given tag declaration (D) with (Root) tag declaration
+   * We ensure that both decls have same parent contexts and have same name and tag.
+   * If all preconditions are met, we check two decls for ODR violations.
+   * If violation is detected we return false
+   */
   bool VisitTagDecl(TagDecl* D) {
     if (!IsSameDecls(D)) {
       return true;
     }
 
-    return CheckDecls(D);
+    return FindOdrViolationsForDecl(D);
   }
 private:
   TagDecl* Root;
@@ -122,14 +131,10 @@ private:
     return cmp.isSame(ddc, rdc);
   }
 
-  bool CheckDecls(TagDecl* D) {
-    Out << "D: \n";
-    D->dump(Out);
+  bool FindOdrViolationsForDecl(TagDecl* D) {
+    OdrViolationsScanner Scanner(Out);
 
-    Out << "R: \n";
-    Root->dump(Out);
-
-    return true;
+    return Scanner.Scan(Root, D);
   }
 };
 
@@ -182,7 +187,7 @@ public:
         return false;
       }
     }
-    return EXIT_SUCCESS;
+    return true;
   }
 
 private:

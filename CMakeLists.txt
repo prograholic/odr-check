@@ -2,7 +2,7 @@ project(odr-check)
 
 set(LLVM_LINK_COMPONENTS
   Support
-  )
+)
 
 add_clang_executable(odr-check
   DeclContextComparer.cpp
@@ -12,7 +12,9 @@ add_clang_executable(odr-check
   OdrCheckAction.cpp
   OdrCheckAction.h
   OdrCheck.cpp
-  )
+  OdrViolationsScanner.cpp
+  OdrViolationsScanner.h
+)
 
 target_link_libraries(odr-check
   clangAST
@@ -20,4 +22,4 @@ target_link_libraries(odr-check
   clangBasic
   clangFrontend
   clangTooling
-  )
+)

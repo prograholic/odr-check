@@ -3,13 +3,14 @@
 #include "clang/AST/Decl.h"
 
 namespace clang {
-
 namespace odr_check {
 
 DeclContextComparer::DeclContextComparer(llvm::raw_ostream& out) : Out(out) {
 }
 
 bool DeclContextComparer::isSame(DeclContext* left, DeclContext* right) {
+  /// @todo See NamedDecl::printQualifiedName for visiting decl contexts
+
   while (left && right) {
     if (left->isTranslationUnit() && right->isTranslationUnit()) {
       Out << "both decl contexts are TU\n";
