@@ -40,7 +40,7 @@
 
 #include "OdrCheckAction.h"
 #include "OdrCheckTool.h"
-#include "DeclContextComparer.h"
+#include "DeclContextChainsComparer.h"
 #include "OdrViolationsScanner.h"
 
 using namespace clang;
@@ -72,10 +72,16 @@ private:
 };
 
 
-class FindTagDecl : public RecursiveASTVisitor<FindTagDecl>
+/**
+ * @brief The TagDeclFinder class finds corresponding TagDecl from another AST
+ * for given left TagDecl
+ */
+class TagDeclFinder : public RecursiveASTVisitor<TagDeclFinder>
 {
 public:
-  FindTagDecl(TagDecl* root, raw_ostream& out) : Root(root), Out(out) {
+  TagDeclFinder(TagDecl* right, raw_ostream& out)
+    : m_right(right)
+    , m_out(out) {
   }
 
   /**
@@ -86,91 +92,79 @@ public:
    * If all preconditions are met, we check two decls for ODR violations.
    * If violation is detected we return false
    */
-  bool VisitTagDecl(TagDecl* D) {
-    if (!IsSameDecls(D)) {
+  bool VisitTagDecl(TagDecl* left) {
+    if (!IsSameDecls(left)) {
       return true;
     }
 
-    return FindOdrViolationsForDecl(D);
+    return FindOdrViolationsForDecl(left);
   }
 private:
-  TagDecl* Root;
-  raw_ostream& Out;
+  TagDecl* m_right;
+  raw_ostream& m_out;
 
-  bool IsSameDecls(TagDecl* D) {
-    if (D->getName() != Root->getName()) {
-      Out << "skipping decl with name [" << D->getName() << "], "
-             "expected [" << Root->getName()<< "]\n";
+  bool IsSameDecls(TagDecl* left) {
+    if (left->getName() != m_right->getName()) {
+      m_out << "skipping decl with name [" << left->getName() << "], "
+             "expected [" << m_right->getName()<< "]\n";
       return false;
     }
-    Out << "name [" << D->getName() << "]\n";
+    m_out << "name [" << left->getName() << "]\n";
 
-    if (D->getTagKind() != Root->getTagKind()) {
-      Out << "skipping decl with tag [" << D->getTagKind() << "], "
-             "expected [" << Root->getTagKind()<< "]\n";
+    if (left->getTagKind() != m_right->getTagKind()) {
+      m_out << "skipping decl with tag [" << left->getTagKind() << "], "
+             "expected [" << m_right->getTagKind()<< "]\n";
       return false;
     }
-    Out << "tag [" << D->getTagKind() << "]\n";
+    m_out << "tag [" << left->getTagKind() << "]\n";
 
-    DeclContext* ddc = D->getDeclContext();
-    DeclContext* rdc = Root->getDeclContext();
+    DeclContext* leftDeclCtx = left->getDeclContext();
+    DeclContext* rightDeclCtx = m_right->getDeclContext();
 
-    if (!IsSameDeclContexts(ddc, rdc)) {
-      Out << "decl contexts are different\n";
+    if (!IsSameDeclContexts(leftDeclCtx, rightDeclCtx)) {
+      m_out << "decl contexts are different\n";
       return false;
     }
 
-    Out << "decls are same\n";
+    m_out << "decls are same\n";
 
     return true;
   }
 
-  bool IsSameDeclContexts(DeclContext* ddc, DeclContext* rdc) {
-    DeclContextComparer cmp(Out);
+  bool IsSameDeclContexts(DeclContext* left, DeclContext* right) {
+    DeclContextChainsComparer cmp(m_out);
 
-    return cmp.isSame(ddc, rdc);
+    return cmp.isSame(left, right);
   }
 
-  bool FindOdrViolationsForDecl(TagDecl* D) {
-    OdrViolationsScanner Scanner(Out);
+  bool FindOdrViolationsForDecl(TagDecl* left) {
+    OdrViolationsScanner Scanner(m_out);
 
-    return Scanner.Scan(Root, D);
+    return Scanner.Scan(left, m_right);
   }
 };
 
-
-class RootVisitor : public RecursiveASTVisitor<RootVisitor>
+/**
+ * @brief The TagDeclVisitor class visits each TagDecl object
+ * and compares it with given (left) TagDecl object
+ */
+class TagDeclVisitor : public RecursiveASTVisitor<TagDeclVisitor>
 {
 public:
 
-  RootVisitor(TranslationUnitDecl* other, raw_ostream& out): Other(other), Out(out) {
+  TagDeclVisitor(TranslationUnitDecl* left, raw_ostream& out)
+    : m_left(left)
+    , m_out(out) {
   }
-#if 0
-  bool VisitDecl(Decl *D) {
-    Out << "decl begin {\n";
-    D->dump(Out);
-    Out << "} cxx record end\n";
 
-    return true;
-  }
-#endif //0
-
-  bool VisitTagDecl(TagDecl* D) {
-
-    FindTagDecl other(D, Out);
-
-    return other.TraverseDecl(Other);
-#if 0
-    Out << "cxx record begin {\n";
-    D->dump(Out);
-    Out << "} cxx record end\n";
-    return true;
-#endif //0
+  bool VisitTagDecl(TagDecl* right) {
+    TagDeclFinder other(right, m_out);
+    return other.TraverseDecl(m_left);
   }
 
 private:
-  TranslationUnitDecl* Other;
-  raw_ostream& Out;
+  TranslationUnitDecl* m_left;
+  raw_ostream& m_out;
 };
 
 
@@ -191,12 +185,12 @@ public:
   }
 
 private:
-  bool MergeAsts(ASTUnit* root, ASTUnit* other) const {
-    ASTContext& rootCtx = root->getASTContext();
-    ASTContext& otherCtx = other->getASTContext();
+  bool MergeAsts(ASTUnit* left, ASTUnit* right) const {
+    ASTContext& leftCtx = left->getASTContext();
+    ASTContext& rightCtx = right->getASTContext();
 
-    TranslationUnitDecl* rootTuDecl = rootCtx.getTranslationUnitDecl();
-    TranslationUnitDecl* otherTuDecl = otherCtx.getTranslationUnitDecl();
+    TranslationUnitDecl* leftTuDecl = leftCtx.getTranslationUnitDecl();
+    TranslationUnitDecl* rightTuDecl = rightCtx.getTranslationUnitDecl();
 
     raw_ostream& out = errs();
 
@@ -210,8 +204,8 @@ private:
     out << "\nvisitor\n";
 #endif //0
 
-    RootVisitor V(otherTuDecl, out);
-    V.TraverseDecl(rootTuDecl);
+    TagDeclVisitor V(leftTuDecl, out);
+    V.TraverseDecl(rightTuDecl);
 
 
     return false;

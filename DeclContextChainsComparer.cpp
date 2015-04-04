@@ -1,14 +1,14 @@
-#include "DeclContextComparer.h"
+#include "DeclContextChainsComparer.h"
 
 #include "clang/AST/Decl.h"
 
 namespace clang {
 namespace odr_check {
 
-DeclContextComparer::DeclContextComparer(llvm::raw_ostream& out) : Out(out) {
+DeclContextChainsComparer::DeclContextChainsComparer(llvm::raw_ostream& out) : Out(out) {
 }
 
-bool DeclContextComparer::isSame(DeclContext* left, DeclContext* right) {
+bool DeclContextChainsComparer::isSame(DeclContext* left, DeclContext* right) {
   /// @todo See NamedDecl::printQualifiedName for visiting decl contexts
 
   while (left && right) {
@@ -34,7 +34,7 @@ bool DeclContextComparer::isSame(DeclContext* left, DeclContext* right) {
 }
 
 
-bool DeclContextComparer::isSameDeclContexts(DeclContext* left, DeclContext* right) {
+bool DeclContextChainsComparer::isSameDeclContexts(DeclContext* left, DeclContext* right) {
   if (left->getDeclKind() != right->getDeclKind()) {
     Out << "left decl kind ["<< left->getDeclKindName() << "], "
            "right decl kind  [" << right->getDeclKindName() << "\n";
@@ -43,19 +43,18 @@ bool DeclContextComparer::isSameDeclContexts(DeclContext* left, DeclContext* rig
   }
   Out << "decl kind ["<< left->getDeclKindName() << "]\n";
 
-  /// @todo Maybe it is sufficient to check NamedDecl + some other decls
-  if (isa<NamespaceDecl>(left)) {
-    NamespaceDecl* leftNamespaceDecl = cast<NamespaceDecl>(left);
-    NamespaceDecl* rightNamespaceDecl = cast<NamespaceDecl>(right);
+  if (NamespaceDecl* leftNsDecl = cast<NamespaceDecl>(left)) {
+    NamespaceDecl* rightNsDecl = cast<NamespaceDecl>(right);
+    assert(rightNsDecl);
 
-    if (leftNamespaceDecl->getName() != rightNamespaceDecl->getName()) {
-      Out << "left namespace [" << leftNamespaceDecl->getName() << "], "
-             "right namespace [" << rightNamespaceDecl->getName() << "]\n";
+    if (leftNsDecl->getName() != rightNsDecl->getName()) {
+      Out << "left namespace [" << leftNsDecl->getName() << "], "
+             "right namespace [" << rightNsDecl->getName() << "]\n";
 
       return false;
     }
 
-    Out << "namespace [" << leftNamespaceDecl->getName() << "]\n";
+    Out << "namespace [" << leftNsDecl->getName() << "]\n";
   }
 
   return true;
