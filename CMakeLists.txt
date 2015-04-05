@@ -14,6 +14,8 @@ add_clang_executable(odr-check
   OdrCheck.cpp
   OdrViolationsScanner.cpp
   OdrViolationsScanner.h
+  ASTsTagDeclVisitor.h
+  ASTsTagDeclVisitor.cpp
 )
 
 target_link_libraries(odr-check

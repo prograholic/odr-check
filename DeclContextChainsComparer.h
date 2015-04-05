@@ -33,7 +33,7 @@ namespace odr_check {
  * }
  * }
  *
- * should have different DeclContext chains.
+ * should have different DeclContext chains and method isSame should return false
  */
 class DeclContextChainsComparer {
 public:

@@ -34,14 +34,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/ASTImporter.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Support/Signals.h"
 
 #include "OdrCheckAction.h"
 #include "OdrCheckTool.h"
-#include "DeclContextChainsComparer.h"
 #include "OdrViolationsScanner.h"
+#include "ASTsTagDeclVisitor.h"
 
 using namespace clang;
 using namespace clang::odr_check;
@@ -71,100 +71,34 @@ private:
   }
 };
 
-
-/**
- * @brief The TagDeclFinder class finds corresponding TagDecl from another AST
- * for given left TagDecl
- */
-class TagDeclFinder : public RecursiveASTVisitor<TagDeclFinder>
-{
+class MergeTagDeclProcessor : public TagDeclProcessor {
 public:
-  TagDeclFinder(TagDecl* right, raw_ostream& out)
-    : m_right(right)
-    , m_out(out) {
+  MergeTagDeclProcessor(llvm::raw_ostream& out, ASTImporter& importer)
+    : m_out(out)
+    , m_importer(importer) {
   }
 
-  /**
-   * @brief VisitTagDecl - visit TagDecl declaration and check it with Root
-   *
-   * This function tries to compare given tag declaration (D) with (Root) tag declaration
-   * We ensure that both decls have same parent contexts and have same name and tag.
-   * If all preconditions are met, we check two decls for ODR violations.
-   * If violation is detected we return false
-   */
-  bool VisitTagDecl(TagDecl* left) {
-    if (!IsSameDecls(left)) {
-      return true;
-    }
+  bool Process(TagDecl *left, TagDecl *right) override {
+    OdrViolationsScanner scanner(m_out);
 
-    return FindOdrViolationsForDecl(left);
-  }
-private:
-  TagDecl* m_right;
-  raw_ostream& m_out;
-
-  bool IsSameDecls(TagDecl* left) {
-    if (left->getName() != m_right->getName()) {
-      m_out << "skipping decl with name [" << left->getName() << "], "
-             "expected [" << m_right->getName()<< "]\n";
-      return false;
-    }
-    m_out << "name [" << left->getName() << "]\n";
-
-    if (left->getTagKind() != m_right->getTagKind()) {
-      m_out << "skipping decl with tag [" << left->getTagKind() << "], "
-             "expected [" << m_right->getTagKind()<< "]\n";
-      return false;
-    }
-    m_out << "tag [" << left->getTagKind() << "]\n";
-
-    DeclContext* leftDeclCtx = left->getDeclContext();
-    DeclContext* rightDeclCtx = m_right->getDeclContext();
-
-    if (!IsSameDeclContexts(leftDeclCtx, rightDeclCtx)) {
-      m_out << "decl contexts are different\n";
+    if (!scanner.Scan(left, right)) {
+      m_out << "found ODR violation\n";
       return false;
     }
 
-    m_out << "decls are same\n";
+    if (!m_importer.Import(right)) {
+      /// actually this should be assertion failure
+      m_out << "failed to import decl:\n";
+      right->dump(m_out);
+      return false;
+    }
 
     return true;
   }
 
-  bool IsSameDeclContexts(DeclContext* left, DeclContext* right) {
-    DeclContextChainsComparer cmp(m_out);
-
-    return cmp.isSame(left, right);
-  }
-
-  bool FindOdrViolationsForDecl(TagDecl* left) {
-    OdrViolationsScanner Scanner(m_out);
-
-    return Scanner.Scan(left, m_right);
-  }
-};
-
-/**
- * @brief The TagDeclVisitor class visits each TagDecl object
- * and compares it with given (left) TagDecl object
- */
-class TagDeclVisitor : public RecursiveASTVisitor<TagDeclVisitor>
-{
-public:
-
-  TagDeclVisitor(TranslationUnitDecl* left, raw_ostream& out)
-    : m_left(left)
-    , m_out(out) {
-  }
-
-  bool VisitTagDecl(TagDecl* right) {
-    TagDeclFinder other(right, m_out);
-    return other.TraverseDecl(m_left);
-  }
-
 private:
-  TranslationUnitDecl* m_left;
-  raw_ostream& m_out;
+  llvm::raw_ostream& m_out;
+  ASTImporter& m_importer;
 };
 
 
@@ -189,26 +123,15 @@ private:
     ASTContext& leftCtx = left->getASTContext();
     ASTContext& rightCtx = right->getASTContext();
 
-    TranslationUnitDecl* leftTuDecl = leftCtx.getTranslationUnitDecl();
-    TranslationUnitDecl* rightTuDecl = rightCtx.getTranslationUnitDecl();
-
     raw_ostream& out = errs();
 
-#if 0
-    out << "root\n";
-    rootTuDecl->dump(out);
+    ASTImporter importer(leftCtx, left->getFileManager(), rightCtx, right->getFileManager(), false);
 
-    out << "\nother\n";
-    otherTuDecl->dump();
+    MergeTagDeclProcessor proc(out, importer);
 
-    out << "\nvisitor\n";
-#endif //0
+    ASTsTagDeclVisitor visitor(out, proc);
 
-    TagDeclVisitor V(leftTuDecl, out);
-    V.TraverseDecl(rightTuDecl);
-
-
-    return false;
+    return visitor.VisitASTs(leftCtx, rightCtx);
   }
 };
 
