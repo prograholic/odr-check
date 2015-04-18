@@ -24,13 +24,17 @@ public:
       return false;
     }
 
-    if (!m_importer.Import(right)) {
-      right->dump(llvm::errs());
-      assert(0 && "import failed");
-      return false;
-    }
-
     return true;
+  }
+
+  void OnNewDecl(TagDecl* newDecl) override {
+
+    llvm::errs() << "importing [" << newDecl->getName() << "]...\n";
+
+    if (!m_importer.Import(newDecl)) {
+      newDecl->dump(llvm::errs());
+      llvm::errs() << "import failed\n";
+    }
   }
 
 private:
@@ -66,7 +70,6 @@ void OdrCheckASTMerger::Merge(ASTContext &Ctx) {
   ASTsTagDeclVisitor visitor(proc);
 
   if (!visitor.VisitASTs(*MergedContext, Ctx)) {
-    llvm::errs() << "failed to visit Ctx\n";
   }
 }
 

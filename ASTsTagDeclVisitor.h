@@ -23,6 +23,12 @@ public:
    * @return false if process of visiting should be stopped
    */
   virtual bool Process(TagDecl* left, TagDecl* right) = 0;
+
+  /**
+   * @brief Called each time we found new TagDecl which does not exists in merged ASTContext
+   * @param newDecl
+   */
+  virtual void OnNewDecl(TagDecl* newDecl) = 0;
 };
 
 class ASTsTagDeclVisitor {
@@ -34,7 +40,7 @@ public:
    *
    * @returns false if visiting was terminated, otherwise true
    */
-  bool VisitASTs(ASTContext& left, ASTContext& right);
+  bool VisitASTs(ASTContext& mergedCtx, ASTContext& newCtx);
 
 private:
   TagDeclProcessor& m_proc;

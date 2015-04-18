@@ -16,6 +16,7 @@ struct CheckTagDeclInOutParams
 {
   TagDecl* decl;
   bool continueScanning;
+  bool declFoundInMergedCtx;
 };
 
 /**
@@ -43,6 +44,7 @@ public:
       return true;
     }
 
+    m_params.declFoundInMergedCtx = true;
     m_params.continueScanning = m_proc.Process(left, m_params.decl);
 
     /** We stop scanning for given TagDecl
@@ -86,25 +88,26 @@ private:
 };
 
 /**
- * @brief The RightASTVisitor class enumerates all TagDecl objects in `right` AST
+ * @brief The NewASTVisitor class enumerates all TagDecl objects in `new` AST
  * and starts scanning of another TU decl (m_left) with given TagDecl object.
  */
-class RightASTVisitor : public RecursiveASTVisitor<RightASTVisitor>
+class NewASTVisitor : public RecursiveASTVisitor<NewASTVisitor>
 {
 public:
 
-  RightASTVisitor(TagDeclProcessor &proc, ASTContext& left)
+  NewASTVisitor(TagDeclProcessor &proc, ASTContext& mergedCtx)
     : m_proc(proc)
-    , m_left(left) {
+    , m_mergedCtx(mergedCtx) {
   }
 
-  bool VisitTagDecl(TagDecl* right) {
-    CheckTagDeclInOutParams params = {right, false};
+  bool VisitTagDecl(TagDecl* newDecl) {
+    CheckTagDeclInOutParams params = {newDecl, false, false};
     TagDeclFinder other(params, m_proc);
-    if (!other.TraverseDecl(m_left.getTranslationUnitDecl())) {
-      /**
-       * We successfully found same decl
-       */
+
+    other.TraverseDecl(m_mergedCtx.getTranslationUnitDecl());
+
+    if (!params.declFoundInMergedCtx) {
+      m_proc.OnNewDecl(newDecl);
     }
 
     return params.continueScanning;
@@ -112,7 +115,7 @@ public:
 
 private:
   TagDeclProcessor& m_proc;
-  ASTContext& m_left;
+  ASTContext& m_mergedCtx;
 
 };
 
@@ -123,10 +126,10 @@ ASTsTagDeclVisitor::ASTsTagDeclVisitor(TagDeclProcessor &proc)
   : m_proc(proc) {
 }
 
-bool ASTsTagDeclVisitor::VisitASTs(ASTContext& left, ASTContext& right) {
-  RightASTVisitor rightASTVisitor(m_proc, left);
+bool ASTsTagDeclVisitor::VisitASTs(ASTContext& mergedCtx, ASTContext& newCtx) {
+  NewASTVisitor newASTVisitor(m_proc, mergedCtx);
 
-  return rightASTVisitor.TraverseDecl(right.getTranslationUnitDecl());
+  return newASTVisitor.TraverseDecl(newCtx.getTranslationUnitDecl());
 }
 
 } // end namespace odr_check
