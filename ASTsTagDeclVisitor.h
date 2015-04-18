@@ -1,12 +1,6 @@
 #ifndef LLVM_CLANG_TOOL_ODR_CHECK_ASTS_TAG_DECL_VISITOR_H
 #define LLVM_CLANG_TOOL_ODR_CHECK_ASTS_TAG_DECL_VISITOR_H
 
-namespace llvm {
-
-class raw_ostream;
-
-} // end namespace llvm
-
 namespace clang {
 
 class TagDecl;
@@ -33,7 +27,7 @@ public:
 
 class ASTsTagDeclVisitor {
 public:
-  ASTsTagDeclVisitor(llvm::raw_ostream& out, TagDeclProcessor& proc);
+  explicit ASTsTagDeclVisitor(TagDeclProcessor& proc);
 
   /**
    * @brief VisitASTs visit all TagDecls in both ASTs
@@ -43,7 +37,6 @@ public:
   bool VisitASTs(ASTContext& left, ASTContext& right);
 
 private:
-  llvm::raw_ostream& m_out;
   TagDeclProcessor& m_proc;
 };
 

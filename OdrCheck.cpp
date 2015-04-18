@@ -38,8 +38,8 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Support/Signals.h"
 
-#include "OdrCheckAction.h"
-#include "OdrCheckTool.h"
+#include "OdrCheckActionFactory.h"
+#include "OdrCheckASTMerger.h"
 #include "OdrViolationsScanner.h"
 #include "ASTsTagDeclVisitor.h"
 
@@ -50,6 +50,34 @@ using namespace llvm;
 
 namespace {
 
+class MergeTagDeclProcessor : public TagDeclProcessor {
+public:
+  explicit MergeTagDeclProcessor(ASTImporter& importer)
+    : m_importer(importer) {
+  }
+
+  bool Process(TagDecl *left, TagDecl *right) override {
+    OdrViolationsScanner scanner;
+
+    if (!scanner.Scan(left, right)) {
+      /// found ODR violation(s)
+      return false;
+    }
+
+    if (!m_importer.Import(right)) {
+      right->dump(errs());
+      assert(0 && "import failed");
+      return false;
+    }
+
+    return true;
+  }
+
+private:
+  ASTImporter& m_importer;
+};
+
+#if 0
 class SimpleComparisonCheckingStrategy : public OdrCheckingStrategy {
 public:
   virtual bool Check(ASTList &ASTs) override {
@@ -71,35 +99,7 @@ private:
   }
 };
 
-class MergeTagDeclProcessor : public TagDeclProcessor {
-public:
-  MergeTagDeclProcessor(llvm::raw_ostream& out, ASTImporter& importer)
-    : m_out(out)
-    , m_importer(importer) {
-  }
 
-  bool Process(TagDecl *left, TagDecl *right) override {
-    OdrViolationsScanner scanner(m_out);
-
-    if (!scanner.Scan(left, right)) {
-      m_out << "found ODR violation\n";
-      return false;
-    }
-
-    if (!m_importer.Import(right)) {
-      /// actually this should be assertion failure
-      m_out << "failed to import decl:\n";
-      right->dump(m_out);
-      return false;
-    }
-
-    return true;
-  }
-
-private:
-  llvm::raw_ostream& m_out;
-  ASTImporter& m_importer;
-};
 
 
 class ASTMergingCheckingStrategy : public OdrCheckingStrategy {
@@ -123,13 +123,9 @@ private:
     ASTContext& leftCtx = left->getASTContext();
     ASTContext& rightCtx = right->getASTContext();
 
-    raw_ostream& out = errs();
-
     ASTImporter importer(leftCtx, left->getFileManager(), rightCtx, right->getFileManager(), false);
-
-    MergeTagDeclProcessor proc(out, importer);
-
-    ASTsTagDeclVisitor visitor(out, proc);
+    MergeTagDeclProcessor proc(importer);
+    ASTsTagDeclVisitor visitor(proc);
 
     return visitor.VisitASTs(leftCtx, rightCtx);
   }
@@ -144,6 +140,9 @@ public:
 
 };
 
+
+#endif //0
+
 } // end namespace
 
 
@@ -154,9 +153,13 @@ static cl::OptionCategory ToolTemplateCategory("odr-check options");
 int main(int argc, const char **argv) {
   llvm::sys::PrintStackTraceOnErrorSignal();
   CommonOptionsParser OptionsParser(argc, argv, ToolTemplateCategory);
-  OdrCheckTool Tool(OptionsParser.getCompilations(),
-                    OptionsParser.getSourcePathList());
 
-  MergeAstsAction Action;
-  return Tool.runOdrCheck(&Action);
+  ClangTool Tool(OptionsParser.getCompilations(),
+                 OptionsParser.getSourcePathList());
+
+  OdrCheckASTMerger ASTMerger;
+  OdrCheckActionFactory ActionFactory(ASTMerger);
+
+  std::unique_ptr<FrontendActionFactory> FrontendFactory = newFrontendActionFactory(&ActionFactory);
+  return Tool.run(FrontendFactory.get());
 }

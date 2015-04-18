@@ -1,14 +1,11 @@
 #ifndef LLVM_CLANG_TOOL_ODR_CHECK_ODR_VIOLATIONS_SCANNER_H
 #define LLVM_CLANG_TOOL_ODR_CHECK_ODR_VIOLATIONS_SCANNER_H
 
-namespace llvm {
-
-class raw_ostream;
-
-} // end namespace llvm
+#include "clang/Basic/Diagnostic.h"
 
 namespace clang {
 
+class Decl;
 class TagDecl;
 class CXXRecordDecl;
 class RecordDecl;
@@ -24,18 +21,18 @@ namespace odr_check {
  */
 class OdrViolationsScanner {
 public:
-  explicit OdrViolationsScanner(llvm::raw_ostream &out);
 
   bool Scan(TagDecl *left, TagDecl *right);
 
 private:
-  llvm::raw_ostream& Out;
 
   /// Scan only CXXRecordDecl-specific fields, attributes and so on
   bool ScanCxxRecordDeclSpecific(CXXRecordDecl* left, CXXRecordDecl* right);
 
   /// Scan only RecordDecl-specific fields, attributes and so on
   bool ScanRecordDeclSpecific(RecordDecl* left, RecordDecl* right);
+
+  DiagnosticBuilder Diag(Decl* decl, StringRef formatString);
 };
 
 } // end namespace odr_check

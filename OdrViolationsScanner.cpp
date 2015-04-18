@@ -2,18 +2,13 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/ASTContext.h"
 
 namespace clang {
 namespace odr_check {
 
-OdrViolationsScanner::OdrViolationsScanner(llvm::raw_ostream &out)
-  : Out(out) {
-}
-
 bool OdrViolationsScanner::Scan(TagDecl *left, TagDecl *right) {
   assert(left->getKind() == right->getKind());
-
-  Out << "kind: " << left->getKindName() << "\n";
 
   if (CXXRecordDecl* leftCxxRec = cast<CXXRecordDecl>(left)) {
     CXXRecordDecl* rightCxxRec = cast<CXXRecordDecl>(right);
@@ -32,13 +27,6 @@ bool OdrViolationsScanner::Scan(TagDecl *left, TagDecl *right) {
       return false;
     }
   }
-#if 0
-  Out << "left:\n";
-  left->dump(Out);
-
-  Out << "right:\n";
-  right->dump(Out);
-#endif //0
 
   return true;
 }
@@ -65,12 +53,10 @@ bool OdrViolationsScanner::ScanCxxRecordDeclSpecific(CXXRecordDecl* left, CXXRec
   /// @todo scan for methods, ctors
 
   if (leftBaseIt != left->bases_end()) {
-    Out << "left has base spec\n";
     return false;
   }
 
   if (rightBaseIt != right->bases_end()) {
-    Out << "right has base spec\n";
     return false;
   }
 
@@ -86,13 +72,7 @@ bool OdrViolationsScanner::ScanRecordDeclSpecific(RecordDecl* left, RecordDecl* 
     FieldDecl* rightBase = *rightFieldIt;
 
     if (leftBase->isBitField() != rightBase->isBitField()) {
-      Out << "bit field ";
     }
-
-    //Out << "left:\n";
-    //leftBase->dump(Out);
-    //Out << "right:\n";
-    //rightBase->dump(Out);
 
     //assert(0 && "not implemented");
 
@@ -101,20 +81,26 @@ bool OdrViolationsScanner::ScanRecordDeclSpecific(RecordDecl* left, RecordDecl* 
   }
 
   if (leftFieldIt != left->field_end()) {
-    Out << "left has field\n";
-    leftFieldIt->dump(Out);
+    FieldDecl* unprocessed = *leftFieldIt;
+    Diag(unprocessed, "found field") << "AAA";
     return false;
   }
 
   if (rightFieldIt != right->field_end()) {
-    Out << "right has field\n";
-    rightFieldIt->dump(Out);
+    FieldDecl* unprocessed = *rightFieldIt;
+    Diag(unprocessed, "found field") << "BBB";
     return false;
   }
 
   return true;
 }
 
+DiagnosticBuilder OdrViolationsScanner::Diag(Decl* decl, StringRef formatString) {
+  DiagnosticsEngine& engine = decl->getASTContext().getDiagnostics();
+  unsigned diagId = engine.getDiagnosticIDs()->getCustomDiagID(DiagnosticIDs::Error, formatString);
+
+  return engine.Report(decl->getSourceRange().getBegin(), diagId) << decl->getSourceRange();
+}
 
 } // end namespace odr_check
 } // end namespace clang

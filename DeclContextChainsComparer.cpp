@@ -5,20 +5,14 @@
 namespace clang {
 namespace odr_check {
 
-DeclContextChainsComparer::DeclContextChainsComparer(llvm::raw_ostream& out) : Out(out) {
-}
-
 bool DeclContextChainsComparer::isSame(DeclContext* left, DeclContext* right) {
   /// @todo See NamedDecl::printQualifiedName for visiting decl contexts
 
   while (left && right) {
     if (left->isTranslationUnit() && right->isTranslationUnit()) {
-      Out << "both decl contexts are TU\n";
       return true;
     }
     else if (left->isTranslationUnit() || right->isTranslationUnit()) {
-      Out << "left is TU[" << left->isTranslationUnit() << "], "
-             "right is TU[" << right->isTranslationUnit() << "]\n";
       return false;
     }
 
@@ -36,25 +30,18 @@ bool DeclContextChainsComparer::isSame(DeclContext* left, DeclContext* right) {
 
 bool DeclContextChainsComparer::isSameDeclContexts(DeclContext* left, DeclContext* right) {
   if (left->getDeclKind() != right->getDeclKind()) {
-    Out << "left decl kind ["<< left->getDeclKindName() << "], "
-           "right decl kind  [" << right->getDeclKindName() << "\n";
-
+    /// different kinds of DeclContexts
     return false;
   }
-  Out << "decl kind ["<< left->getDeclKindName() << "]\n";
 
   if (NamespaceDecl* leftNsDecl = cast<NamespaceDecl>(left)) {
     NamespaceDecl* rightNsDecl = cast<NamespaceDecl>(right);
     assert(rightNsDecl);
 
     if (leftNsDecl->getName() != rightNsDecl->getName()) {
-      Out << "left namespace [" << leftNsDecl->getName() << "], "
-             "right namespace [" << rightNsDecl->getName() << "]\n";
-
+      /// different namespace names
       return false;
     }
-
-    Out << "namespace [" << leftNsDecl->getName() << "]\n";
   }
 
   return true;

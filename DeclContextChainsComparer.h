@@ -1,12 +1,6 @@
 #ifndef LLVM_CLANG_TOOL_ODR_CHECK_DECL_CONTEXT_COMPARER_H
 #define LLVM_CLANG_TOOL_ODR_CHECK_DECL_CONTEXT_COMPARER_H
 
-namespace llvm {
-
-class raw_ostream;
-
-} // end namespace llvm
-
 namespace clang {
 
 class DeclContext;
@@ -16,7 +10,7 @@ namespace odr_check {
 /**
  * @brief The DeclContextComparer class performs simple comparation of two DeclContexts
  *
- * Its main purpose - to check that two TagDecls have same declaration context
+ * Its main purpose - is to check that two TagDecls have same declaration context
  *
  * For example
  * namespace a {
@@ -37,15 +31,10 @@ namespace odr_check {
  */
 class DeclContextChainsComparer {
 public:
-  explicit DeclContextChainsComparer(llvm::raw_ostream& out);
-
-
   // Check that two DeclContext objects are same.
   bool isSame(DeclContext* left, DeclContext* right);
 
 private:
-  llvm::raw_ostream& Out;
-
   bool isSameDeclContexts(DeclContext* left, DeclContext* right);
 };
 

@@ -25,9 +25,8 @@ struct CheckTagDeclInOutParams
 class TagDeclFinder : public RecursiveASTVisitor<TagDeclFinder>
 {
 public:
-  TagDeclFinder(raw_ostream& out, CheckTagDeclInOutParams& params, TagDeclProcessor& proc)
-    : m_out(out)
-    , m_params(params)
+  TagDeclFinder(CheckTagDeclInOutParams& params, TagDeclProcessor& proc)
+    : m_params(params)
     , m_proc(proc) {
   }
 
@@ -55,41 +54,32 @@ public:
     return false;
   }
 private:
-  raw_ostream& m_out;
   CheckTagDeclInOutParams& m_params;
   TagDeclProcessor& m_proc;
 
 
   bool IsSameDecls(TagDecl* left) {
     if (left->getName() != m_params.decl->getName()) {
-      m_out << "skipping decl with name [" << left->getName() << "], "
-             "expected [" << m_params.decl->getName()<< "]\n";
       return false;
     }
-    m_out << "name [" << left->getName() << "]\n";
 
     if (left->getTagKind() != m_params.decl->getTagKind()) {
-      m_out << "skipping decl with tag [" << left->getTagKind() << "], "
-             "expected [" << m_params.decl->getTagKind()<< "]\n";
       return false;
     }
-    m_out << "tag [" << left->getTagKind() << "]\n";
 
     DeclContext* leftDeclCtx = left->getDeclContext();
     DeclContext* rightDeclCtx = m_params.decl->getDeclContext();
 
     if (!IsSameDeclContexts(leftDeclCtx, rightDeclCtx)) {
-      m_out << "decl contexts are different\n";
       return false;
     }
 
-    m_out << "decls are same\n";
-
+    /// two decls are same
     return true;
   }
 
   bool IsSameDeclContexts(DeclContext* left, DeclContext* right) {
-    DeclContextChainsComparer cmp(m_out);
+    DeclContextChainsComparer cmp;
 
     return cmp.isSame(left, right);
   }
@@ -103,15 +93,14 @@ class RightASTVisitor : public RecursiveASTVisitor<RightASTVisitor>
 {
 public:
 
-  RightASTVisitor(llvm::raw_ostream &out, TagDeclProcessor &proc, ASTContext& left)
-    : m_out(out)
-    , m_proc(proc)
+  RightASTVisitor(TagDeclProcessor &proc, ASTContext& left)
+    : m_proc(proc)
     , m_left(left) {
   }
 
   bool VisitTagDecl(TagDecl* right) {
     CheckTagDeclInOutParams params = {right, false};
-    TagDeclFinder other(m_out, params, m_proc);
+    TagDeclFinder other(params, m_proc);
     if (!other.TraverseDecl(m_left.getTranslationUnitDecl())) {
       /**
        * We successfully found same decl
@@ -122,7 +111,6 @@ public:
   }
 
 private:
-  raw_ostream& m_out;
   TagDeclProcessor& m_proc;
   ASTContext& m_left;
 
@@ -131,13 +119,12 @@ private:
 } // end namespace
 
 
-ASTsTagDeclVisitor::ASTsTagDeclVisitor(llvm::raw_ostream &out, TagDeclProcessor &proc)
-  : m_out(out)
-  , m_proc(proc) {
+ASTsTagDeclVisitor::ASTsTagDeclVisitor(TagDeclProcessor &proc)
+  : m_proc(proc) {
 }
 
 bool ASTsTagDeclVisitor::VisitASTs(ASTContext& left, ASTContext& right) {
-  RightASTVisitor rightASTVisitor(m_out, m_proc, left);
+  RightASTVisitor rightASTVisitor(m_proc, left);
 
   return rightASTVisitor.TraverseDecl(right.getTranslationUnitDecl());
 }

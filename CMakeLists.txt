@@ -7,10 +7,10 @@ set(LLVM_LINK_COMPONENTS
 add_clang_executable(odr-check
   DeclContextChainsComparer.cpp
   DeclContextChainsComparer.h
-  OdrCheckTool.cpp
-  OdrCheckTool.h
-  OdrCheckAction.cpp
-  OdrCheckAction.h
+  OdrCheckASTMerger.cpp
+  OdrCheckASTMerger.h
+  OdrCheckActionFactory.cpp
+  OdrCheckActionFactory.h
   OdrCheck.cpp
   OdrViolationsScanner.cpp
   OdrViolationsScanner.h
