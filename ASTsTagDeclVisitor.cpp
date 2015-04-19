@@ -2,6 +2,7 @@
 
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/StructuralEquivalence.h"
 
 #include "DeclContextChainsComparer.h"
 
@@ -58,32 +59,17 @@ public:
 private:
   CheckTagDeclInOutParams& m_params;
   TagDeclProcessor& m_proc;
+  llvm::DenseSet<std::pair<Decl *, Decl *> > NotEquivalentDecls;
 
 
   bool IsSameDecls(TagDecl* left) {
-    if (left->getName() != m_params.decl->getName()) {
-      return false;
-    }
+    StructuralEquivalenceContext Ctx(left->getASTContext(),
+                                     m_params.decl->getASTContext(),
+                                     NotEquivalentDecls,
+                                     /* StrictTypeSpelling */false,
+                                     /* Complain */true);
 
-    if (left->getTagKind() != m_params.decl->getTagKind()) {
-      return false;
-    }
-
-    DeclContext* leftDeclCtx = left->getDeclContext();
-    DeclContext* rightDeclCtx = m_params.decl->getDeclContext();
-
-    if (!IsSameDeclContexts(leftDeclCtx, rightDeclCtx)) {
-      return false;
-    }
-
-    /// two decls are same
-    return true;
-  }
-
-  bool IsSameDeclContexts(DeclContext* left, DeclContext* right) {
-    DeclContextChainsComparer cmp;
-
-    return cmp.isSame(left, right);
+    return Ctx.IsStructurallyEquivalent(left, m_params.decl);
   }
 };
 

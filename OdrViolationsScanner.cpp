@@ -8,6 +8,7 @@ namespace clang {
 namespace odr_check {
 
 bool OdrViolationsScanner::Scan(TagDecl *left, TagDecl *right) {
+  return true;
   assert(left->getKind() == right->getKind());
 
   if (CXXRecordDecl* leftCxxRec = cast<CXXRecordDecl>(left)) {
@@ -82,13 +83,13 @@ bool OdrViolationsScanner::ScanRecordDeclSpecific(RecordDecl* left, RecordDecl* 
 
   if (leftFieldIt != left->field_end()) {
     FieldDecl* unprocessed = *leftFieldIt;
-    Diag(unprocessed, "found field") << "AAA";
+    //Diag(unprocessed, "found field") << "AAA";
     return false;
   }
 
   if (rightFieldIt != right->field_end()) {
     FieldDecl* unprocessed = *rightFieldIt;
-    Diag(unprocessed, "found field") << "BBB";
+    //Diag(unprocessed, "found field") << "BBB";
     return false;
   }
 

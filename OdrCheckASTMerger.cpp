@@ -2,6 +2,12 @@
 
 #include "clang/AST/ASTImporter.h"
 
+#include "clang/Basic/TargetInfo.h"
+
+#include "clang/Frontend/ASTUnit.h"
+#include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Frontend/CompilerInstance.h"
+
 #include "ASTsTagDeclVisitor.h"
 #include "OdrViolationsScanner.h"
 
@@ -29,7 +35,7 @@ public:
 
   void OnNewDecl(TagDecl* newDecl) override {
 
-    llvm::errs() << "importing [" << newDecl->getName() << "]...\n";
+    //llvm::errs() << "importing [" << newDecl->getName() << "]...\n";
 
     if (!m_importer.Import(newDecl)) {
       newDecl->dump(llvm::errs());
@@ -43,25 +49,26 @@ private:
 
 } // end namespace
 
-OdrCheckASTMerger::OdrCheckASTMerger() {
+OdrCheckASTMerger::OdrCheckASTMerger() :CI() {
+}
+
+OdrCheckASTMerger::~OdrCheckASTMerger() {
+  /// needed for destroying CI
 }
 
 void OdrCheckASTMerger::Merge(ASTContext &Ctx) {
-  if (!MergedContext) {
-    /// simply create context from another context
-    LangOpts = Ctx.getLangOpts();
-    Idents.reset(new IdentifierTable(LangOpts));
-    Builtins = Ctx.BuiltinInfo;
-
-    MergedContext = llvm::make_unique<ASTContext>(LangOpts,
-                                                  Ctx.getSourceManager(),
-                                                  *Idents,
-                                                  Selectors,
-                                                  Builtins);
+  if (!CI) {
+    CreateCompilerInstance(Ctx.getTargetInfo().getTargetOpts());
   }
 
-  ASTImporter importer(*MergedContext,
-                       MergedContext->getSourceManager().getFileManager(),
+  DiagnosticConsumer& DiagClient = CI->getDiagnosticClient();
+  DiagClient.BeginSourceFile(CI->getLangOpts(),
+                             &CI->getPreprocessor());
+
+  ASTContext& mergedCtx = CI->getASTContext();
+
+  ASTImporter importer(mergedCtx,
+                       CI->getFileManager(),
                        Ctx,
                        Ctx.getSourceManager().getFileManager(),
                        false);
@@ -69,10 +76,26 @@ void OdrCheckASTMerger::Merge(ASTContext &Ctx) {
   MergeTagDeclProcessor proc(importer);
   ASTsTagDeclVisitor visitor(proc);
 
-  if (!visitor.VisitASTs(*MergedContext, Ctx)) {
+  if (!visitor.VisitASTs(mergedCtx, Ctx)) {
   }
+
+  DiagClient.EndSourceFile();
 }
 
+
+void OdrCheckASTMerger::CreateCompilerInstance(const TargetOptions &Opts) {
+  CI = llvm::make_unique<CompilerInstance>();
+
+  CI->createFileManager();
+  CI->createDiagnostics();
+  CI->createSourceManager(CI->getFileManager());
+
+  std::shared_ptr<TargetOptions> OptsPtr = std::make_shared<TargetOptions>(Opts);
+
+  CI->setTarget(TargetInfo::CreateTargetInfo(CI->getDiagnostics(), OptsPtr));
+  CI->createPreprocessor(TU_Complete);
+  CI->createASTContext();
+}
 
 } // end namespace odr_check
 } // end namespace clang
