@@ -39,8 +39,9 @@ bool OdrViolationsScanner::ScanCxxRecordDeclSpecific(CXXRecordDecl* left, CXXRec
   CXXRecordDecl::base_class_iterator rightBaseIt = right->bases_begin();
 
   while ((leftBaseIt != left->bases_end()) && (rightBaseIt != right->bases_end())) {
-    CXXBaseSpecifier& leftBase = *leftBaseIt;
-    CXXBaseSpecifier& rightBase = *rightBaseIt;
+    //CXXBaseSpecifier& leftBase = *leftBaseIt;
+    //CXXBaseSpecifier& rightBase = *rightBaseIt;
+
 
     //assert(0 && "not implemented");
 
@@ -82,13 +83,13 @@ bool OdrViolationsScanner::ScanRecordDeclSpecific(RecordDecl* left, RecordDecl* 
   }
 
   if (leftFieldIt != left->field_end()) {
-    FieldDecl* unprocessed = *leftFieldIt;
+    //FieldDecl* unprocessed = *leftFieldIt;
     //Diag(unprocessed, "found field") << "AAA";
     return false;
   }
 
   if (rightFieldIt != right->field_end()) {
-    FieldDecl* unprocessed = *rightFieldIt;
+    //FieldDecl* unprocessed = *rightFieldIt;
     //Diag(unprocessed, "found field") << "BBB";
     return false;
   }
