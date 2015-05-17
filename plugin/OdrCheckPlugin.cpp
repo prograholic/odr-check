@@ -19,11 +19,12 @@ class StoreDeclaration : public SemaConsumer
 {
 public:
 
-  explicit StoreDeclaration(const std::string& filename, const std::string& sysRoot, raw_ostream& os)
+  explicit StoreDeclaration(const std::string& filename, const std::string& sysRoot, raw_ostream& os, bool shouldDumpAST)
     : m_filename(filename)
     , m_sysRoot(sysRoot)
     , m_sema(nullptr)
-    , m_os(os) {
+    , m_os(os)
+    , m_shouldDumpAST(shouldDumpAST) {
   }
 
   void InitializeSema(Sema &S) {
@@ -35,6 +36,10 @@ public:
     if (Ctx.getDiagnostics().hasFatalErrorOccurred()) {
       llvm::errs() << "fatal error occurred\n";
       return;
+    }
+
+    if (m_shouldDumpAST) {
+      Ctx.getTranslationUnitDecl()->dump(llvm::errs());
     }
 
     SmallVector<char, 128> buffer;
@@ -61,6 +66,7 @@ private:
   const std::string m_sysRoot;
   Sema* m_sema;
   raw_ostream& m_os;
+  bool m_shouldDumpAST;
 };
 
 
@@ -81,7 +87,7 @@ public:
 
     llvm::errs() << "writing data to [" << m_odrOutputFileName << "]...\n";
 
-    return llvm::make_unique<StoreDeclaration>(m_odrOutputFileName, CI.getHeaderSearchOpts().Sysroot, *os);
+    return llvm::make_unique<StoreDeclaration>(m_odrOutputFileName, CI.getHeaderSearchOpts().Sysroot, *os, m_shouldDumpAST);
   }
 
   bool ParseArgs(const CompilerInstance &/* CI */,
@@ -102,6 +108,10 @@ public:
         break;
 
       case AS_OdrOutputConsumed:
+        if (arg == "--should_dump_ast") {
+          llvm::errs() << "incorrect argument position [" << arg << "], please fix args list\n";
+          return false;
+        }
         m_odrOutputFileName = arg;
         ArgsState = AS_OdrFileConsumed;
         break;
@@ -111,16 +121,22 @@ public:
         break;
       }
 
-      if (ArgsState != AS_OdrFileConsumed) {
-        /// invlid input
+      if (arg == "--should_dump_ast") {
+        m_shouldDumpAST = true;
       }
-
     }
+
+    if (ArgsState != AS_OdrFileConsumed) {
+      llvm::errs() << "please set -odr_output parameter with filename\n";
+      return false;
+    }
+
     return true;
   }
 
 private:
   std::string m_odrOutputFileName;
+  bool m_shouldDumpAST = false;
 
 };
 

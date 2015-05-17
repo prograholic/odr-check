@@ -41,13 +41,7 @@
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "llvm/Support/Signals.h"
 
-#include "OdrCheckActionFactory.h"
-#include "OdrCheckASTMerger.h"
-#include "OdrViolationsScanner.h"
-#include "ASTsTagDeclVisitor.h"
-
 using namespace clang;
-using namespace clang::odr_check;
 using namespace clang::tooling;
 using namespace llvm;
 
@@ -104,16 +98,23 @@ int main(int argc, const char **argv) {
 
   std::vector<ASTUnitPtr> units;
 
+  bool shouldDumpAST = false;
+
   ++argv;
   while (*argv) {
-    std::string file = *argv;
-    llvm::errs() << "processing file [" << file << "]...\n";
-    ASTUnitPtr unit = ASTUnit::LoadFromASTFile(file, Diagnostics, FileSystemOptions());
+    const std::string arg = *argv;
+    ++argv;
+
+    if ("--should_dump_ast" == arg) {
+      shouldDumpAST = true;
+      continue;
+    }
+
+    llvm::errs() << "processing file [" << arg << "]...\n";
+    ASTUnitPtr unit = ASTUnit::LoadFromASTFile(arg, Diagnostics, FileSystemOptions());
     if (unit) {
       units.push_back(std::move(unit));
     }
-
-    ++argv;
   }
 
   if (units.empty()) {
@@ -123,9 +124,9 @@ int main(int argc, const char **argv) {
 
   auto front = units.begin();
   auto next = front + 1;
+  ASTUnit& to = **front;
 
   while (next != units.end()) {
-    ASTUnit& to = **front;
     ASTUnit& from = **next;
     llvm::errs() << "merging AST [" << from.getASTFileName() << "] to [" << to.getASTFileName() << "]...\n";
 
@@ -133,6 +134,13 @@ int main(int argc, const char **argv) {
     visitor.MergeASTs();
 
     ++next;
+  }
+
+  if (shouldDumpAST) {
+    llvm::errs() << "dumping final AST...\n";
+    ASTContext& finalContext = to.getASTContext();
+
+    finalContext.getTranslationUnitDecl()->dump(llvm::errs());
   }
 
   return 0;
