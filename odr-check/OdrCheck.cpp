@@ -86,16 +86,6 @@ int main(int argc, const char **argv) {
   llvm::sys::PrintStackTraceOnErrorSignal();
   //CommonOptionsParser OptionsParser(argc, argv, ToolTemplateCategory);
 
-
-  IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts = new DiagnosticOptions();
-  TextDiagnosticPrinter DiagnosticPrinter(
-      llvm::errs(), &*DiagOpts);
-  IntrusiveRefCntPtr<DiagnosticsEngine> Diagnostics = new DiagnosticsEngine(
-      IntrusiveRefCntPtr<clang::DiagnosticIDs>(new DiagnosticIDs()), &*DiagOpts,
-      &DiagnosticPrinter, false);
-
-
-
   std::vector<ASTUnitPtr> units;
 
   bool shouldDumpAST = false;
@@ -109,6 +99,14 @@ int main(int argc, const char **argv) {
       shouldDumpAST = true;
       continue;
     }
+
+    IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts = new DiagnosticOptions();
+    std::unique_ptr<TextDiagnosticPrinter> DiagnosticPrinter = llvm::make_unique<TextDiagnosticPrinter>(
+        llvm::errs(), &*DiagOpts);
+
+    IntrusiveRefCntPtr<DiagnosticsEngine> Diagnostics = new DiagnosticsEngine(
+        IntrusiveRefCntPtr<clang::DiagnosticIDs>(new DiagnosticIDs()), &*DiagOpts,
+        DiagnosticPrinter.release());
 
     llvm::errs() << "processing file [" << arg << "]...\n";
     ASTUnitPtr unit = ASTUnit::LoadFromASTFile(arg, Diagnostics, FileSystemOptions());
