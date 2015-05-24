@@ -36,15 +36,21 @@
 
 #include "clang/AST/ASTImporter.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/ASTDiagnostic.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
+#include "clang/Frontend/CompilerInstance.h"
+#include "clang/Lex/Preprocessor.h"
+#include "clang/Basic/TargetInfo.h"
 #include "llvm/Support/Signals.h"
 
 using namespace clang;
 using namespace clang::tooling;
 using namespace llvm;
 
+
+bool ShouldDumpAST = false;
 
 // Set up the command line options
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
@@ -55,10 +61,8 @@ typedef std::unique_ptr<ASTUnit> ASTUnitPtr;
 class TagDeclVisitor : public RecursiveASTVisitor<TagDeclVisitor>
 {
 public:
-  TagDeclVisitor(ASTUnit& to, ASTUnit& from)
-    : m_to(to)
-    , m_from(from)
-    , m_importer(to.getASTContext(), to.getFileManager(),
+  TagDeclVisitor(ASTContext& to, FileManager& toFileMgr, ASTUnit& from)
+    : m_importer(to, toFileMgr,
                  from.getASTContext(), from.getFileManager(),
                  false) {
   }
@@ -66,18 +70,19 @@ public:
 
 
   void MergeASTs() {
-    TraverseDecl(m_from.getASTContext().getTranslationUnitDecl());
+    TraverseDecl(m_importer.getFromContext().getTranslationUnitDecl());
   }
 
   bool VisitTagDecl(TagDecl* fromDecl) {
     m_importer.Import(fromDecl);
+    if (ShouldDumpAST) {
+      fromDecl->dump(llvm::errs());
+    }
 
     return true;
   }
 
 private:
-  ASTUnit& m_to;
-  ASTUnit& m_from;
   ASTImporter m_importer;
 };
 
@@ -88,15 +93,13 @@ int main(int argc, const char **argv) {
 
   std::vector<ASTUnitPtr> units;
 
-  bool shouldDumpAST = false;
-
   ++argv;
   while (*argv) {
     const std::string arg = *argv;
     ++argv;
 
     if ("--should_dump_ast" == arg) {
-      shouldDumpAST = true;
+      ShouldDumpAST = true;
       continue;
     }
 
@@ -116,30 +119,46 @@ int main(int argc, const char **argv) {
   }
 
   if (units.empty()) {
-    llvm::errs() << "not AST units found\n";
+    llvm::errs() << "no AST units found\n";
     return 0;
   }
 
-  auto front = units.begin();
-  auto next = front + 1;
-  ASTUnit& to = **front;
 
-  while (next != units.end()) {
-    ASTUnit& from = **next;
-    llvm::errs() << "merging AST [" << from.getASTFileName() << "] to [" << to.getASTFileName() << "]...\n";
+  CompilerInstance CI;
+  // FIXME: prograholic: get proper target triplet
+  CI.getInvocation().TargetOpts->Triple = "i386-pc-linux-gnu";
+  CI.createDiagnostics();
+  CI.setTarget(TargetInfo::CreateTargetInfo(CI.getDiagnostics(),
+                                            CI.getInvocation().TargetOpts));
 
-    TagDeclVisitor visitor(to, from);
+  CI.createFileManager();
+  CI.createSourceManager(CI.getFileManager());
+  CI.createPreprocessor(TU_Complete);
+  CI.createASTContext();
+  ASTContext& toContext = CI.getASTContext();
+
+  CI.getDiagnosticClient().BeginSourceFile(CI.getLangOpts(), &CI.getPreprocessor());
+
+  CI.getDiagnostics().SetArgToStringFn(&FormatASTNodeDiagnosticArgument,
+                                       &CI.getASTContext());
+
+  for (auto& unit : units) {
+    ASTUnit& from = *unit;
+    llvm::errs() << "merging AST [" << from.getASTFileName() << "]\n";
+
+    TagDeclVisitor visitor(toContext, CI.getFileManager(), from);
     visitor.MergeASTs();
-
-    ++next;
   }
 
-  if (shouldDumpAST) {
+  // FIXME: prograholic: assertion failure if ShouldDumpAST == true
+  if (ShouldDumpAST) {
     llvm::errs() << "dumping final AST...\n";
-    ASTContext& finalContext = to.getASTContext();
 
-    finalContext.getTranslationUnitDecl()->dump(llvm::errs());
+    toContext.getTranslationUnitDecl()->dump(llvm::errs());
   }
 
+  CI.getDiagnosticClient().EndSourceFile();
+
+  // FIXME: prograholic: add proper result code
   return 0;
 }
