@@ -1,12 +1,10 @@
-#pragma pack(push, 1)
+#include <cstdint>
 
 struct C {
 	char c;
-	unsigned int x;
+	uint32_t x;
 };
 
-#pragma pack(pop)
-
-void Modify(C& c) {
-	c.x = 0xABCDEF78;
+void Modify(C* c, size_t pos) {
+	c[pos].x += 1;;
 }

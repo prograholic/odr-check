@@ -1,24 +1,19 @@
 #include <iostream>
+#include <string>
+#include <boost/noncopyable.hpp>
 
-struct A {
-	int x;
-};
-
-struct B {
+struct A : private boost::noncopyable{
+	A() : x("0") {
+	}
+	const std::string x;
 	int y;
 };
 
-struct C {
-	B b;
+void Modify(A& a);
+
+int main() {
 	A a;
-};
-
-void Modify(C& c);
-
-int main()
-{
-	C c = {{0}, {0}};
-	Modify(c);
-	std::cout << "a: " << c.a.x << std::endl;
+	Modify(a);
+	std::cout << "a: " << a.x << std::endl;
 	return 0;
 }

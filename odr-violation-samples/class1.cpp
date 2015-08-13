@@ -1,17 +1,12 @@
-struct A {
-	int x;
-};
+#include <string>
+#include <boost/noncopyable.hpp>
 
-struct B {
+struct A : private boost::noncopyable{
+	A();
 	int y;
+	const std::string x;
 };
 
-struct C {
-	A a;
-	B b;
-};
-
-void Modify(C& c) {
-	c.a.x = 10;
-	c.b.y = 20;
+void Modify(A& a) {
+	a.y += 1;
 }
